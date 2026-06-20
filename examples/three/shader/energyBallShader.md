@@ -1,0 +1,139 @@
+---
+title: "Three.js 能量球教程"
+description: "详解 Three.js 能量球：基于 WebGL 实现「能量球」可视化效果，附完整可运行源码，涵盖 ShaderMaterial、OrbitControls 等关键实现，附完整源码与在线 Demo，适合 Three.js 着色器 学习与二次开发。"
+head:
+  - - meta
+    - name: keywords
+      content: "Three.js,能量球,WebGL,源码,教程,在线案例,ShaderMaterial,自定义着色器,GLSL,OrbitControls,相机控制"
+outline: deep
+---
+
+### 能量球 · *Energy Ball* · [▶ 在线运行案例](https://z2586300277.github.io/three-cesium-examples/#/codeMirror?navigation=ThreeJS&classify=shader&id=energyBallShader)
+- **案例合集：** [三维可视化功能案例（threehub.cn）](https://threehub.cn)
+
+- **开源仓库github地址：** https://github.com/z2586300277/three-cesium-examples
+
+- **400个案例代码: ** [网盘链接](https://pan.quark.cn/s/201da5c82fec)
+
+![能量球](https://z2586300277.github.io/three-cesium-examples/threeExamples/shader/energyBallShader.jpg)
+
+## 你将学到什么
+
+- ShaderMaterial 自定义着色器实现核心视觉效果
+- OrbitControls 相机轨道交互
+- `requestAnimationFrame` 渲染循环与 `resize` 自适应
+
+## 效果说明
+
+本案例演示 **能量球** 效果：基于 WebGL 实现「能量球」可视化效果，附完整可运行源码；核心用到 ShaderMaterial、OrbitControls。建议先打开文首在线案例查看动态画面，再对照下方源码逐步理解。
+
+## 核心概念
+- **Scene / Camera / WebGLRenderer** 构成最小渲染闭环；大场景可开 `logarithmicDepthBuffer` 缓解 Z-fighting。
+- **ShaderMaterial** 通过 `uniforms` + 自定义 GLSL 控制逐像素/逐点效果；透明粒子常配合 `depthTest: false`。
+- **OrbitControls** 提供轨道旋转/缩放；开启 `enableDamping` 后需在 animate 中 `controls.update()`。
+
+## 实现步骤
+
+1. 搭建 Scene、PerspectiveCamera、WebGLRenderer，挂载 canvas 并处理 `resize`
+2. 定义 uniforms / onBeforeCompile 或 ShaderMaterial，编写 GLSL 与材质参数
+3. 创建 OrbitControls（及 Raycaster 等交互控件，若源码包含）
+4. 在 `requestAnimationFrame` 循环中更新状态并 render（Cesium 为 `viewer.render` 或自动渲染）
+
+## 代码要点
+
+```js
+import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+
+const box = document.getElementById('box')
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(50, box.clientWidth / box.clientHeight, 0.1, 1000)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true })
+renderer.setSize(box.clientWidth, box.clientHeight)
+box.appendChild(renderer.domElement)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+
+// 创建城市建筑物
+const createBuildings = () => {
+  const buildings = new THREE.Group()
+  const buildingCount = 50
+  
+  for(let i = 0; i < buildingCount; i++) {
+    const height = Math.random() * 5 + 1
+    const geometry = new THREE.BoxGeometry(1, height, 1)
+    const material = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff })
+    
+    const building = new THREE.Mesh(geometry, material)
+    building.position.set((Math.random() - 0.5) * 20, height / 2, (Math.random() - 0.5) * 20)
+    buildings.add(building)
+  }
+  
+  scene.add(buildings)
+}
+
+// 创建能量球着色器
+const energyBallShader = new THREE.ShaderMaterial({
+  uniforms: { time: { value: 0.0 }, color: { value: new THREE.Color(1.0, 0.5, 0.0) } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+    uniform vec3 color;
+    varying vec2 vUv;
+    void main() {
+      vec2 center = vec2(0.5, 0.5);
+      float dist = length(vUv - center);
+      float pulse = sin(time * 2.0) * 0.5 + 0.5;
+      float alpha = smoothstep(0.5, 0.0, dist) * pulse;
+      vec3 finalColor = mix(color, vec3(1.0), 1.0 - dist);
+      gl_FragColor = vec4(finalColor, alpha);
+    }
+  `,
+  transparent: true,
+  side: THREE.DoubleSide
+})
+
+// 创建能量球
+const energyBall = new THREE.Mesh(new THREE.PlaneGeometry(5, 5), energyBallShader)
+energyBall.rotation.x = -Math.PI / 2
+energyBall.position.y = 0.1
+scene.add(energyBall)
+
+// 添加环境光和点光源
+scene.add(new THREE.AmbientLight(0x333333))
+const pointLight = new THREE.PointLight(0xff9900, 2, 20)
+pointLight.position.set(0, 5, 0)
+scene.add(pointLight)
+
+// 创建建筑物
+createBuildings()
+
+// 调整相机位置
+camera.position.set(0, 5, 5)
+camera.lookAt(0, 2, 0)
+
+animate()
+
+function animate() {
+  requestAnimationFrame(animate)
+  controls.update()
+  energyBallShader.uniforms.time.value += 0.016
+  renderer.render(scene, camera)
+}
+```
+
+完整源码：[GitHub](https://github.com/z2586300277/three-cesium-examples/blob/dev/threeExamples/shader/energyBallShader.js)
+
+## 小结
+
+- 本文提供 **能量球** 完整 Three.js 源码与在线 Demo，建议先运行案例再改 uniform/参数做二次实验
+- 更多 Three.js 实战案例见 [three-cesium-examples 合集](https://threehub.cn) 与 [GitHub 开源仓库](https://github.com/z2586300277/three-cesium-examples)
+
